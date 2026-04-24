@@ -63,13 +63,21 @@ class Client:
         return {'Authorization': f'Bearer {self.token}'}
 
     # ---- high-level flow ----
-    def run(self, folder: str, out: str = './reports',
+    def run(self, folder: Optional[str] = None,
+            out: Optional[str] = None,
             batch_tag: Optional[str] = None,
             poll_interval: float = DEFAULT_POLL_INTERVAL,
             timeout: float = DEFAULT_TIMEOUT,
             verbose: bool = True) -> dict:
-        """Zip ``folder``, upload, poll, extract PDFs into ``out``."""
-        folder_path = Path(folder).resolve()
+        """Zip ``folder``, upload, poll, extract PDFs into ``out``.
+
+        ``folder`` defaults to the current working directory.
+        ``out``    defaults to ``<cwd>/<server-chosen-tag>``, matching the
+        label the archive shows for this batch; collision-suffixed if the
+        target already exists.
+        """
+        folder_path = Path(folder) if folder else Path.cwd()
+        folder_path = folder_path.resolve()
         if not folder_path.is_dir():
             raise FileNotFoundError(f'folder not found: {folder_path}')
 
@@ -81,13 +89,17 @@ class Client:
             print(f'[pivotaljreport] uploading {n} file(s) from {folder_path}')
         job = self._upload(zip_bytes, folder_path.name, batch_tag)
         job_id = job['job_id']
+        tag = job.get('tag') or f'job-{job_id}'
         if verbose:
-            print(f'[pivotaljreport] job {job_id} queued '
-                  f'(tag={job.get("tag")!r})')
+            print(f'[pivotaljreport] job {job_id} queued (tag={tag!r})')
+
+        if out is None:
+            out_path = _uniquify_dir(Path.cwd() / _sanitize_name(tag))
+        else:
+            out_path = Path(out).resolve()
 
         status = self._poll_until_done(job_id, poll_interval, timeout, verbose)
 
-        out_path = Path(out).resolve()
         out_path.mkdir(parents=True, exist_ok=True)
         extracted = self._download_and_extract(job_id, out_path)
         if verbose:
@@ -191,8 +203,14 @@ def authenticate(username: str, password: str,
     return _DEFAULT.authenticate(username=username, password=password)
 
 
-def run(folder: str, out: str = './reports', **kwargs) -> dict:
-    """Convenience: delegate to the default client's ``run()``."""
+def run(folder: Optional[str] = None, out: Optional[str] = None,
+        **kwargs) -> dict:
+    """Convenience: delegate to the default client's ``run()``.
+
+    ``folder`` defaults to the current working directory.
+    ``out``    defaults to ``<cwd>/<server-chosen-tag>`` (uniquified if
+    that directory already exists).
+    """
     return get_client().run(folder=folder, out=out, **kwargs)
 
 
@@ -210,6 +228,31 @@ def _zip_xlsx_folder(folder: Path) -> tuple[bytes, int]:
             zf.write(path, arcname=path.name)
             n += 1
     return buf.getvalue(), n
+
+
+_PATH_UNSAFE = r'<>:"/\|?*'
+
+
+def _sanitize_name(name: str) -> str:
+    """Strip characters that Windows (or sensible humans) don't want in a
+    directory name. Leaves the ``·`` separator alone since it's legal on
+    every target filesystem and keeps the label readable."""
+    cleaned = ''.join('_' if c in _PATH_UNSAFE else c for c in name)
+    cleaned = cleaned.strip(' .')           # trailing dots/spaces are bad on Windows
+    return cleaned or 'reports'
+
+
+def _uniquify_dir(path: Path) -> Path:
+    """Return ``path`` if it does not exist; otherwise append ``-1``, ``-2``,
+    … until the name is free. Avoids clobbering a previous run's output."""
+    if not path.exists():
+        return path
+    i = 1
+    while True:
+        candidate = path.with_name(f'{path.name}-{i}')
+        if not candidate.exists():
+            return candidate
+        i += 1
 
 
 def _raise_or_json(r: requests.Response) -> dict:

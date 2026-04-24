@@ -41,10 +41,12 @@ def _build_parser() -> argparse.ArgumentParser:
         'run',
         help='Generate reports for every .xlsx in a folder.',
     )
-    run.add_argument('folder',
-                     help='Local folder containing .xlsx input files.')
-    run.add_argument('--out', default='./reports',
-                     help='Where to write generated PDFs (default: ./reports).')
+    run.add_argument('folder', nargs='?', default=None,
+                     help='Local folder containing .xlsx input files '
+                          '(default: current working directory).')
+    run.add_argument('--out', default=None,
+                     help='Where to write generated PDFs '
+                          '(default: <cwd>/<server-tag>).')
     run.add_argument('--username',
                      default=os.getenv('PIVOTALJREPORT_USERNAME'),
                      help='Account username (env: PIVOTALJREPORT_USERNAME).')
