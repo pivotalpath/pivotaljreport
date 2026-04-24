@@ -1,0 +1,18 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pivotaljreport"
+version = "0.1.0"
+description = "Programmatic client for the PivotalPath jreport service."
+requires-python = ">=3.9"
+dependencies = [
+    "requests>=2.31",
+]
+
+[project.scripts]
+pivotaljreport = "pivotaljreport.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
